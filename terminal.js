@@ -1,76 +1,87 @@
-const readline = require('readline')
+'use strict'
+
+const clr = {
+  red: text => `\u001b[031m${text}\u001b[0m`,
+  green: text => `\u001b[032m${text}\u001b[0m`,
+  lightGreen: text => `\u001b[92m${text}\u001b[0m`,
+  lightBlue: text => `\u001b[34m${text}\u001b[0m`,
+  yellow: text => `\u001b[33m${text}\u001b[0m`
+}
 const io = require('socket.io-client')
+const readline = require('readline')
 const rl = readline.createInterface({
-	input: process.stdin,
-	output: process.stdout,
-});
-let socket;
-let user;
-let sessionMsg = new Array();
-rl.setPrompt('-> ')
+  input: process.stdin,
+  output: process.stdout
+})
+let socket
+let sessionMsg = new Array()
+rl.setPrompt(clr.lightGreen('-> '))
 
 //clear all
-process.stdout.write('\033c');
+console.clear()
 
-const startConn = (fail) => {
+const startConn = async () => {
+  rl.question('Set server: ', function (server) {
+    socket = io.connect(server == 'test' ? 'http://localhost:3000' : server)
 
-	fail ? console.log(`\x1b[31mTry Again\x1b[0m`) : null
+    socket.on('connect', () => {
+      //set user before enter chat
+      process.stdout.write(clr.green('Chat connected!\n'))
 
-	rl.question('Enter the server: ', server => {
-		socket = io(server);
+      rl.question('Set your username: ', user => {
+        startService(user, socket)
+      })
+    })
 
-		socket.on('connsucessful', bool => {
-			//set user before enter chat
-			console.log('\x1b[032mChat conected!\x1b[0m');
+    if (server) {
+      socket.on('connect_error', () => {
+        socket.disconnect()
+        process.stdout.write(clr.red('Try Again.\n'))
+        startConn()
+      })
+    } else {
+      process.stdout.write(clr.yellow('You need enter a server.\n'))
+      startConn()
+    }
+  })
+}
+startConn()
 
-			rl.question('Set your username: ', user => {
-				if (bool) startService(timeout, user);
-			})
-		})
+const startService = (user, socket) => {
+  rl.setPrompt(clr.lightGreen(`${user} >> `))
+  process.stdout.write('\x1bc')
 
-		let timeout = setTimeout(() => {
-			startConn(true)
-		}, 5000);
+  const addmsg = (msgData, from) => {
+    process.stdout.write('\x1bc')
 
-	})
-}; startConn();
+    sessionMsg.push({ ...msgData, from })
 
+    sessionMsg.forEach(message => {
+      if (message.from == 'local') {
+        process.stdout.write(
+          clr.lightBlue(`${message.user} >> ${message.text}`)
+        )
+      } else {
+        process.stdout.write(
+          clr.lightGreen(`${message.user} << ${message.text}`)
+        )
+      }
+      process.stdout.write('\n')
+    })
+  }
 
+  socket.on('receive', data => {
+    addmsg(data, 'remote')
+    rl.prompt()
+  })
 
-const startService = (timeout, user) => {
-	clearTimeout(timeout);
-	process.stdout.write('\033c');
+  rl.on('line', function (text) {
+    let msgData = { text, user }
 
-	const addmsg = (msgData, from) => {
-		process.stdout.write('\033c');
+    socket.emit('send', msgData)
+    addmsg(msgData, 'local')
+    rl.prompt()
+  })
 
-		sessionMsg.push({ ...msgData, from });
-
-		sessionMsg.forEach(message => {
-			if (message.from == 'local') {
-				process.stdout.write(`\x1b[33m${message.user} >> ${message.text}\x1b[0m`);
-			} else {
-				process.stdout.write(`\x1b[36m${message.user} << ${message.text}\x1b[0m`);
-			}
-			process.stdout.write('\n');
-		});
-	}
-
-	socket.on('receive', (data) => {
-		addmsg(data, 'remote');
-		rl.prompt();
-	})
-
-
-	rl.on('line', function (text) {
-
-		let msgData = { text, user: user };
-
-		socket.emit('send', msgData);
-		addmsg(msgData, 'local');
-		rl.prompt()
-	});
-
-	rl.prompt();
-
+  rl.prompt()
 }
